@@ -65,8 +65,6 @@ public sealed class RailWorker(IServiceProvider services, IHttpClientFactory cli
         var snapshot = await scope.ServiceProvider.GetRequiredService<FeedDecoder>().DecodeAsync(vehicles, updates, mode, frame, ct);
         var stale = mode == "Live" && DateTimeOffset.UtcNow - snapshot.ObservedAt > TimeSpan.FromMinutes(2);
         snapshot = snapshot with { Warning = stale ? "El proveedor entrega datos con más de dos minutos de antigüedad." : warning };
-        var predictor = scope.ServiceProvider.GetRequiredService<DelayPredictor>();
-        snapshot = snapshot with { Trains = snapshot.Trains.Select(t => t with { PredictedDelayMinutes = predictor.Predict(t) }).ToArray() };
         var ids = snapshot.Trains.Select(t => t.Id).ToArray();
         var observations = await db.Observations.Where(x => ids.Contains(x.TrainId) && x.SourceMode == mode && x.ObservedAt >= snapshot.ObservedAt.AddMinutes(-10)).Select(x => new { x.TrainId, x.ObservedAt }).ToListAsync(ct);
         var known = observations.Select(x => (x.TrainId, x.ObservedAt)).ToHashSet();

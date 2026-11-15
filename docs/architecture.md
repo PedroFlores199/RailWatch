@@ -20,3 +20,5 @@ Los reintentos y circuit breaker provienen de `Microsoft.Extensions.Http.Resilie
 Las estadísticas usan Dapper sobre PostgreSQL. Incluyen percentil 95 y funciones `LAG`/`ROW_NUMBER` para comparar observaciones consecutivas. Las consultas locales alternativas utilizan EF Core. El benchmark compara una agregación equivalente, no una consulta de EF deliberadamente menos eficiente.
 
 ML.NET usa regresión SDCA y codificación de línea. Se forman pares consecutivos con cambio de estación y menos de 45 minutos de separación; se exigen 200 pares y se reserva el 20% final para evaluar. El modo de la fuente se filtra antes de entrenar. La muestra incluida no permite asegurar un modelo útil; por eso las predicciones permanecen ausentes cuando faltan datos.
+
+El modelo se aplica en el receptor de la API al proyectar cada snapshot, por lo que también funciona con worker y API en procesos distintos. La prueba de predicción comprueba el paso desde un productor sin modelo a un receptor entrenado.

@@ -6,13 +6,18 @@ using StackExchange.Redis;
 
 namespace RailWatch.Infrastructure;
 
-public sealed class LiveState
+public sealed class LiveState(DelayPredictor predictor)
 {
     private FeedSnapshot snapshot = new("Waiting", "Esperando al worker", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, []);
     public FeedSnapshot Snapshot => Volatile.Read(ref snapshot);
     public event Action<FeedSnapshot>? Updated;
     public event Action<AlertEvent>? AlertRaised;
-    public void Apply(FeedSnapshot value) { Interlocked.Exchange(ref snapshot, value); Updated?.Invoke(value); }
+    public void Apply(FeedSnapshot value)
+    {
+        var enriched = value with { Trains = value.Trains.Select(t => t with { PredictedDelayMinutes = predictor.Predict(t) ?? t.PredictedDelayMinutes }).ToArray() };
+        Interlocked.Exchange(ref snapshot, enriched);
+        Updated?.Invoke(enriched);
+    }
     public void Alert(AlertEvent value) => AlertRaised?.Invoke(value);
 }
 public sealed class RedisRelay(IConnectionMultiplexer redis, LiveState state, ILogger<RedisRelay> logger) : BackgroundService

@@ -56,7 +56,7 @@
       },
       "targets": [
         {
-          "expr": "rate(railwatch_feed_latency_sum[5m])/rate(railwatch_feed_latency_count[5m])",
+          "expr": "rate(railwatch_feed_latency_milliseconds_sum[5m])/rate(railwatch_feed_latency_milliseconds_count[5m])",
           "refId": "A"
         }
       ],

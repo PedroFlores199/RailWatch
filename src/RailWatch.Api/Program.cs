@@ -48,7 +48,12 @@ app.MapPut("/api/alerts/rules/{id:guid}", async (Guid id, AlertRuleDto r, RailDb
 });
 app.MapDelete("/api/alerts/rules/{id:guid}", async (Guid id, RailDb db, CancellationToken ct) => await db.AlertRules.Where(x => x.Id == id).ExecuteDeleteAsync(ct) > 0 ? Results.NoContent() : Results.NotFound());
 app.MapGet("/api/model", (DelayPredictor model) => new { model.Status, model.Samples, model.MeanAbsoluteError });
-app.MapPost("/api/model/train", async (DelayPredictor model, RailDb db, LiveState state, CancellationToken ct) => new { trained = await model.TrainAsync(db, state.Snapshot.Mode, ct), model.Status, model.MeanAbsoluteError });
+app.MapPost("/api/model/train", async (DelayPredictor model, RailDb db, LiveState state, CancellationToken ct) =>
+{
+    var trained = await model.TrainAsync(db, state.Snapshot.Mode, ct);
+    if (trained) state.Apply(state.Snapshot);
+    return new { trained, model.Status, model.MeanAbsoluteError };
+});
 app.MapGet("/api/export.xlsx", (LiveState state) =>
 {
     using var workbook = new XLWorkbook(); var sheet = workbook.AddWorksheet("Seguimiento"); string[] headers = ["Tren", "Línea", "Servicio", "Próxima estación", "Retraso (min)", "Latitud", "Longitud", "Fuente", "Fecha del dato UTC", "Predicción (min)"];

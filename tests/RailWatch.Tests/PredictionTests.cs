@@ -32,6 +32,13 @@ public sealed class PredictionTests
         var value = predictor.Predict(new TrainPosition("TEST", "TRIP", "C1", "Cercanías", "Test", 40, -3, 300, "S1", "Prueba", start, null));
         value.Should().NotBeNull();
         value!.Value.Should().BeInRange(0, 120);
+        var position = new TrainPosition("TEST", "TRIP", "C1", "Cercanías", "Test", 40, -3, 300, "S1", "Prueba", start, null);
+        var workerState = new LiveState(new DelayPredictor());
+        workerState.Apply(new("Replay", "Prueba", start, start, [position]));
+        workerState.Snapshot.Trains.Single().PredictedDelayMinutes.Should().BeNull();
+        var apiState = new LiveState(predictor);
+        apiState.Apply(workerState.Snapshot);
+        apiState.Snapshot.Trains.Single().PredictedDelayMinutes.Should().NotBeNull();
     }
 
     [Fact]
