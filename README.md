@@ -43,6 +43,8 @@ Descarga el ZIP para tu arquitectura en [Releases](https://github.com/PedroFlore
 
 El cliente implementa MVVM con CommunityToolkit, inyección de dependencias, reconexión SignalR, filtros, alertas visuales/sonoras, barras de puntualidad por línea y exportación a Excel. El ViewModel se prueba en macOS/Linux; GitHub Actions abre la ventana real en Windows y guarda una captura. Los paquetes MSIX de Releases están **sin firmar**: el ZIP es la descarga ejecutable directamente. La firma de un instalador distribuible requiere un certificado del publicador.
 
+![Cliente WPF ejecutado en Windows](docs/wpf.png)
+
 ## Arquitectura
 
 ```mermaid

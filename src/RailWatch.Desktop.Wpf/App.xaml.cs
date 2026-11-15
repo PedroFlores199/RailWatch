@@ -21,11 +21,12 @@ public partial class App : Application
         if (e.Args.Contains("--smoke-test"))
         {
             var model = host.Services.GetRequiredService<ControlRoomViewModel>();
-            for (var i = 0; i < 100 && model.TrainCount == 0; i++) await Task.Delay(200);
-            if (model.TrainCount == 0) { Shutdown(1); return; }
+            for (var i = 0; i < 100 && (model.TrainCount == 0 || model.Lines.Count == 0); i++) await Task.Delay(200);
+            if (model.TrainCount == 0 || model.Lines.Count == 0) { Shutdown(1); return; }
             window.UpdateLayout();
-            var bitmap = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32);
-            bitmap.Render(window);
+            var content = (FrameworkElement)window.Content;
+            var bitmap = new RenderTargetBitmap((int)Math.Ceiling(content.ActualWidth), (int)Math.Ceiling(content.ActualHeight), 96, 96, PixelFormats.Pbgra32);
+            bitmap.Render(content);
             var encoder = new PngBitmapEncoder();
             encoder.Frames.Add(BitmapFrame.Create(bitmap));
             var path = Environment.GetEnvironmentVariable("RAILWATCH_SCREENSHOT") ?? "wpf-smoke.png";
@@ -35,7 +36,12 @@ public partial class App : Application
     }
     protected override async void OnExit(ExitEventArgs e)
     {
-        if (host is not null) { await host.StopAsync(); host.Dispose(); }
+        if (host is not null)
+        {
+            await host.StopAsync();
+            if (host is IAsyncDisposable disposable) await disposable.DisposeAsync();
+            else host.Dispose();
+        }
         base.OnExit(e);
     }
 }

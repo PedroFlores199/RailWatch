@@ -9,6 +9,7 @@ namespace RailWatch.Desktop.Wpf;
 public sealed class DesktopFeedClient(ControlRoomViewModel model) : IAsyncDisposable
 {
     private HubConnection? connection;
+    private int disposed;
     private readonly HttpClient http = new() { BaseAddress = new Uri(Environment.GetEnvironmentVariable("RAILWATCH_URL") ?? "http://localhost:5090") };
     public async Task ConnectAsync()
     {
@@ -23,8 +24,19 @@ public sealed class DesktopFeedClient(ControlRoomViewModel model) : IAsyncDispos
     }
     private async Task ReloadAsync()
     {
-        var s = await http.GetFromJsonAsync<FeedSnapshot>("/api/snapshot"); if (s is not null) model.Apply(s);
-        var lines = await http.GetFromJsonAsync<LineStats[]>("/api/statistics/lines"); model.Lines.Clear(); foreach (var l in lines ?? []) model.Lines.Add(l);
+        var snapshot = await http.GetFromJsonAsync<FeedSnapshot>("/api/snapshot");
+        if (snapshot is null) return;
+        var date = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(snapshot.ObservedAt, TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid")).DateTime);
+        var from = DelayCalculator.ScheduledUtc(date, "00:00:00");
+        var to = DelayCalculator.ScheduledUtc(date.AddDays(1), "00:00:00");
+        var query = "/api/statistics/lines?mode=" + Uri.EscapeDataString(snapshot.Mode) + "&from=" + Uri.EscapeDataString(from.ToString("O")) + "&to=" + Uri.EscapeDataString(to.ToString("O"));
+        var lines = await http.GetFromJsonAsync<LineStats[]>(query);
+        await Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            model.Apply(snapshot);
+            model.Lines.Clear();
+            foreach (var line in (lines ?? []).OrderBy(x => x.Punctuality).Take(6)) model.Lines.Add(line);
+        });
     }
-    public async ValueTask DisposeAsync() { if (connection is not null) await connection.DisposeAsync(); http.Dispose(); }
+    public async ValueTask DisposeAsync() { if (Interlocked.Exchange(ref disposed, 1) != 0) return; if (connection is not null) await connection.DisposeAsync(); http.Dispose(); }
 }

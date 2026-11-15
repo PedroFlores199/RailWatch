@@ -2258,3 +2258,9 @@ td,
 th {
   color: #495057;
 }
+
+h1:focus { outline: none; }
+
+.alerts-panel { max-height: 590px; overflow-y: auto; }
+.alerts-panel > .section-top, .alerts-subtitle, .alert-card, .rules-link { flex-shrink: 0; }
+@media (max-width: 1000px) { .alerts-panel { max-height: none; overflow-y: visible; } }

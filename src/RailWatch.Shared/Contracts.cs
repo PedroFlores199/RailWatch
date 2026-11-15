@@ -38,12 +38,14 @@ public sealed partial class ControlRoomViewModel : ObservableObject
     public ObservableCollection<TrainPosition> Trains { get; } = [];
     public ObservableCollection<AlertEvent> Alerts { get; } = [];
     public ObservableCollection<LineStats> Lines { get; } = [];
+    public string SourceMode { get; private set; } = "Waiting";
     public event Action? SoundRequested;
     private readonly HashSet<string> alerted = [];
     private FeedSnapshot? last;
     public void Apply(FeedSnapshot snapshot)
     {
         last = snapshot;
+        SourceMode = snapshot.Mode;
         Status = $"{snapshot.Mode} · {snapshot.PublishedAt.ToLocalTime():HH:mm:ss} · {snapshot.Trains.Count} trenes";
         TrainCount = snapshot.Trains.Count;
         var known = snapshot.Trains.Where(x => x.DelaySeconds.HasValue).ToArray();
