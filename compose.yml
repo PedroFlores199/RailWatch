@@ -1,0 +1,56 @@
+name: railwatch
+x-app-environment: &app-environment
+  Storage__Mode: Full
+  ConnectionStrings__Postgres: Host=postgres;Database=railwatch;Username=railwatch;Password=${POSTGRES_PASSWORD:-RailWatch_Local_Demo_2026!}
+  ConnectionStrings__Mongo: mongodb://mongo:27017
+  ConnectionStrings__Redis: redis:6379
+  Feed__Mode: ${FEED_MODE:-Replay}
+  Feed__EmbeddedWorker: "false"
+  Feed__IntervalSeconds: "25"
+  Feed__RecordingsDirectory: /app/samples/recordings
+  Feed__SampleSchedule: /app/samples/schedule.zip
+  Feed__VehiclesUrl: https://gtfsrt.renfe.com/vehicle_positions.pb
+  Feed__UpdatesUrl: https://gtfsrt.renfe.com/trip_updates.pb
+  Feed__ScheduleUrl: https://ssl.renfe.com/ftransit/Fichero_CER_FOMENTO/fomento_transit.zip
+services:
+  api:
+    build: { context: ., target: api }
+    ports: ["127.0.0.1:5090:8080"]
+    environment: *app-environment
+    depends_on:
+      postgres: { condition: service_healthy }
+      mongo: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck: { test: ["CMD", "curl", "-f", "http://localhost:8080/health/live"], interval: 10s, timeout: 5s, retries: 12, start_period: 30s }
+  worker:
+    build: { context: ., target: worker }
+    environment: *app-environment
+    depends_on: { api: { condition: service_healthy } }
+  postgres:
+    image: postgres:17-alpine
+    environment: { POSTGRES_USER: railwatch, POSTGRES_DB: railwatch, POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-RailWatch_Local_Demo_2026!}" }
+    volumes: ["postgres-data:/var/lib/postgresql/data"]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U railwatch"], interval: 10s, timeout: 5s, retries: 15 }
+  mongo:
+    image: mongo:8.0
+    volumes: ["mongo-data:/data/db"]
+    healthcheck: { test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"], interval: 10s, timeout: 5s, retries: 15 }
+  redis:
+    image: redis:7.4-alpine
+    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 10s, timeout: 3s, retries: 15 }
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    profiles: [observability]
+    volumes: ["./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+    ports: ["127.0.0.1:9090:9090"]
+    depends_on: [api]
+  grafana:
+    image: grafana/grafana:11.6.0
+    profiles: [observability]
+    environment: { GF_AUTH_ANONYMOUS_ENABLED: "true", GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer, GF_AUTH_DISABLE_LOGIN_FORM: "true" }
+    ports: ["127.0.0.1:3000:3000"]
+    volumes: ["./observability/grafana:/etc/grafana/provisioning:ro"]
+    depends_on: [prometheus]
+volumes:
+  postgres-data:
+  mongo-data:

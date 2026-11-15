@@ -1,0 +1,99 @@
+@page "/"
+@implements IDisposable
+@inject LiveState Live
+@inject IServiceScopeFactory Scopes
+@inject IJSRuntime JS
+
+<PageTitle>RailWatch · Centro de control</PageTitle>
+<div class="shell">
+    <aside class="sidebar">
+        <a href="/" class="brand"><span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="5" y="3" width="14" height="15" rx="3"/><path d="M5 11h14M9 3v8m6-8v8M7 21l3-3m7 3-3-3"/><circle cx="8.5" cy="15" r=".6"/><circle cx="15.5" cy="15" r=".6"/></svg></span><span>RailWatch<small>CONTROL FERROVIARIO</small></span></a>
+        <div class="network"><span class="network-icon">ES</span><div><strong>Red ferroviaria española</strong><small>Centro de control</small></div></div>
+        <span class="nav-label">Operaciones</span>
+        <nav><button class="@(view == "network" ? "active" : "")" @onclick='() => view = "network"'><span>◈</span>Seguimiento</button><button class="@(view == "analytics" ? "active" : "")" @onclick='() => view = "analytics"'><span>▥</span>Puntualidad y análisis</button><button class="@(view == "rules" ? "active" : "")" @onclick='() => view = "rules"'><span>⚑</span>Reglas de alerta<b>@rules.Count(x => x.Enabled)</b></button></nav>
+        <div class="sidebar-bottom"><div class="feed-card"><span class="status-dot"/>@(snapshot.Mode == "Live" ? "Feed de Renfe" : "Reproducción")<p>GTFS-Realtime · Protocol Buffers</p><small>Actualización cada 25 segundos</small></div><div class="profile"><span>PF</span><div><strong>Pedro Flores</strong><small>Centro de operaciones</small></div><a href="/swagger" title="Documentación de la API">↗</a></div></div>
+    </aside>
+    <div class="main-shell"><header class="topbar"><span>Operaciones <b>›</b> Centro de control</span><div><span class="status-dot"/> @ModeLabel <span class="separator">/</span><time>@Madrid(snapshot.PublishedAt).ToString("HH:mm:ss")</time></div></header><main>
+    <div class="heading"><div><span class="eyebrow">RED DE CERCANÍAS</span><h1>@(view == "network" ? "Seguimiento ferroviario" : view == "analytics" ? "Estadísticas de puntualidad" : "Configuración de alertas")</h1><p>@(view == "network" ? "Cercanías · posiciones y retrasos publicados por Renfe." : view == "analytics" ? "Analiza el histórico de observaciones, separado por fuente de datos." : "Configura los umbrales de retraso por línea y estación.")</p></div><div class="heading-actions"><a href="/api/export.xlsx" class="button secondary">↓ Exportar a Excel</a><button class="button primary" @onclick="RefreshAsync">↻ Actualizar</button></div></div>
+    @if (snapshot.Mode != "Live" || snapshot.Warning is not null)
+    {
+        <div class="source-banner"><span>◷</span><div><strong>@(snapshot.Mode == "Waiting" ? "Preparando la primera lectura…" : snapshot.Mode == "Replay" ? "Modo reproducción · datos grabados de Renfe" : "Aviso del proveedor")</strong><p>@(snapshot.Warning ?? (snapshot.Mode == "Replay" ? $"Captura: {Madrid(snapshot.ObservedAt):dd/MM/yyyy HH:mm:ss}. Las posiciones no representan la circulación actual." : "El worker está cargando las posiciones."))</p></div><span class="source-tag">@ModeLabel</span></div>
+    }
+    @if (error is not null) { <div class="error" role="alert">@error<button @onclick="() => error = null">×</button></div> }
+    <div class="stats-grid"><div class="stat"><div><span>Trenes en seguimiento</span><span>≋</span></div><strong>@snapshot.Trains.Count</strong><small><i class="status-dot"/> @snapshot.Trains.Select(t => t.Line).Distinct().Count() líneas con actividad</small></div><div class="stat"><div><span>Puntualidad observada</span><span>◷</span></div><strong>@(Punctuality.HasValue ? Punctuality.Value.ToString("0.0") : "—")<em>@(Punctuality.HasValue ? "%" : "")</em></strong><small>Umbral de 5 min · @known.Length retrasos informados</small></div><div class="stat"><div><span>Retrasos superiores a 15 min</span><span>⚑</span></div><strong class="warning-text">@snapshot.Trains.Count(t => DelayCalculator.IsLate(t.DelaySeconds))</strong><small>Sobre los trenes con retraso conocido</small></div><div class="stat"><div><span>Antigüedad del dato</span><span>↻</span></div><strong>@(snapshot.Mode == "Live" ? Math.Max(0,(int)(DateTimeOffset.UtcNow - snapshot.ObservedAt).TotalSeconds).ToString() : "25")<em>s</em></strong><small>@(snapshot.Mode == "Live" ? "Desde la marca del proveedor" : "Intervalo de reproducción")</small></div></div>
+    <section style="display:@(view == "network" ? "block" : "none")">
+    <div class="operations-grid"><section class="map-panel"><div class="section-top"><div><h2>Mapa de operaciones</h2><p>@snapshot.Source</p></div><div class="map-controls"><select aria-label="Filtrar por línea" @bind="line" @bind:after="UpdateMap"><option value="">Todas las líneas</option>@foreach (var l in snapshot.Trains.Select(t => t.Line).Distinct().Order()) { <option>@l</option> }</select><select aria-label="Filtrar por tipo" @bind="category" @bind:after="UpdateMap"><option value="">Todos los servicios</option><option>Cercanías</option><option>AVE</option><option>Media Distancia</option></select></div></div><div id="rail-map" aria-label="Mapa de posiciones de trenes en España"/><div class="map-footer"><div><span><i class="legend green"/>≤ 5 min</span><span><i class="legend gold"/>5–15 min</span><span><i class="legend red"/>&gt; 15 min</span><span><i class="legend gray"/>Sin dato</span></div><small>@Filtered.Count() trenes visibles · © OpenStreetMap</small></div>@if (Filtered.Count() == 0) { <div class="map-empty">Sin posiciones para estos filtros. El feed público configurado cubre Cercanías.</div> }</section><aside class="alerts-panel panel"><div class="section-top"><h2>Alertas activas</h2><span class="count-badge">@alerts.Count</span></div><div class="alerts-subtitle"><span class="status-dot"/>Seguimiento automático</div>@if (alerts.Count == 0) { <div class="empty-alert"><span>✓</span><h3>Sin nuevas alertas</h3><p>Las incidencias aparecerán al superar los umbrales configurados.</p></div> }@foreach (var a in alerts.Take(6)) { <button class="alert-card" @onclick="() => FocusTrain(a.TrainId)"><span class="alert-icon">!</span><div><strong>@a.Line · @a.TrainId</strong><p>@a.Message</p><time>@Madrid(a.At).ToString("HH:mm:ss")</time></div><span>↗</span></button> }<button class="rules-link" @onclick='() => view = "rules"'>Configurar reglas <span>→</span></button></aside></div>
+    <div class="detail-grid"><section class="panel trains-panel"><div class="section-top"><div><h2>Trenes en circulación</h2><p>Selecciona un tren para localizarlo en el mapa</p></div><input class="table-search" placeholder="Buscar tren, línea o estación…" aria-label="Buscar tren" @bind="trainQuery" @bind:event="oninput"/></div><div class="train-table-wrap"><table><thead><tr><th>Servicio / tren</th><th>Línea</th><th>Próxima estación</th><th>Retraso</th><th>Predicción</th><th/></tr></thead><tbody>@foreach (var t in Filtered.Where(t => (t.Label + t.Line + t.NextStop).Contains(trainQuery,StringComparison.OrdinalIgnoreCase)).OrderByDescending(t => t.DelaySeconds).Take(12)) { <tr><td><button @onclick="() => FocusTrain(t.Id)"><strong>@t.Id</strong><small>@t.Category</small></button></td><td><span class="line-chip">@t.Line</span></td><td>@t.NextStop</td><td><span class="delay @DelayClass(t.DelaySeconds)">@DelayLabel(t.DelaySeconds)</span></td><td class="subtle">@(t.PredictedDelayMinutes.HasValue ? $"{t.PredictedDelayMinutes:0.0} min" : "Sin modelo")</td><td><button class="table-arrow" title="Localizar tren" @onclick="() => FocusTrain(t.Id)">↗</button></td></tr> }</tbody></table></div><div class="table-foot">Se muestran hasta 12 trenes. Los retrasos ausentes se conservan como «sin dato».</div></section><section class="panel station-panel"><div class="section-top"><h2>Panel de estación</h2><span class="muted-icon">⌖</span></div><select class="station-select" aria-label="Seleccionar estación" @bind="station"><option value="">Seleccionar estación</option>@foreach (var s in stations.Where(s => snapshot.Trains.Any(t => t.NextStopId == s.Id)).OrderBy(s => s.Name)) { <option value="@s.Id">@s.Name</option> }</select><span class="eyebrow arrivals-label">Próximas llegadas informadas</span>@foreach (var t in snapshot.Trains.Where(t => t.NextStopId == station).OrderBy(t => t.Arrival).Take(5)) { <div class="arrival"><span class="line-chip">@t.Line</span><div><strong>@t.Id</strong><small>@((t.Arrival.HasValue ? Madrid(t.Arrival.Value).ToString("HH:mm") : null) ?? "Hora no informada")</small></div><span class="delay @DelayClass(t.DelaySeconds)">@DelayLabel(t.DelaySeconds)</span></div> }@if (station.Length == 0) { <p class="station-hint">Selecciona una estación para consultar los trenes que la tienen como próxima parada.</p> }<div class="station-note">GTFS-RT · La previsión se muestra solo cuando el proveedor la informa.</div></section></div>
+    </section>
+    @if (view == "analytics")
+    {
+        <div class="analytics-note">Fuente: <strong>@ModeLabel</strong> · Fecha del dato: @Madrid(snapshot.ObservedAt).ToString("dd MMM yyyy") · Puntualidad por observación con retraso conocido, no por viaje completo.</div><div class="analytics-grid"><section class="panel"><div class="section-top"><h2>Puntualidad por línea</h2><span class="subtle">≤ 5 minutos</span></div>@foreach (var l in lineStats) { <div class="line-stat"><span class="line-chip">@l.Line</span><div><div class="bar-track"><span style="width:@(l.Punctuality?.ToString("0.0",System.Globalization.CultureInfo.InvariantCulture))%"/></div><small>@l.Samples observaciones · media @l.AverageDelay?.ToString("0.0") min · P95 @l.P95Delay?.ToString("0.0") min</small></div><strong>@l.Punctuality?.ToString("0.0")%</strong></div> }@if (lineStats.Count == 0) { <p class="station-hint">Todavía no hay retrasos conocidos en el histórico de esta fuente.</p> }</section><section class="panel"><div class="section-top"><h2>Distribución por hora</h2><span class="subtle">Hora de Madrid</span></div><div class="hour-chart">@foreach (var h in hours) { <div><span>@h.Punctuality?.ToString("0")%</span><div><i style="height:@(h.Punctuality?.ToString("0.0",System.Globalization.CultureInfo.InvariantCulture))%"/></div><small>@h.Period h</small></div> }</div></section></div><section class="panel analytics-panel"><div class="section-top"><h2>Evolución semanal</h2><span class="subtle">Últimos 7 días de la fuente</span></div><div class="weekly">@foreach (var d in daily) { <div><span>@d.Period</span><strong>@d.Punctuality?.ToString("0.0")%</strong><small>@d.Samples observaciones</small></div> }</div></section><section class="panel analytics-panel"><div class="section-top"><h2>Predicción de la próxima estación</h2><span class="source-tag">ML.NET / SDCA</span></div><p>@modelStatus</p><button class="button secondary" @onclick="TrainModel">Entrenar con el histórico de @ModeLabel</button><small class="model-note">División temporal 80/20. Se requieren 200 pares de estaciones; no se inventan predicciones cuando faltan datos.</small></section>
+    }
+    @if (view == "rules")
+    {
+        <section class="panel rules-panel"><div class="section-top"><div><h2>Reglas de alerta</h2><p>Se evalúan en el worker. Un tren genera una alerta al entrar en el umbral.</p></div></div>@foreach (var r in rules) { <div class="rule-row"><span class="rule-flag">⚑</span><div><strong>@r.Name</strong><p>@(r.Line ?? "Todas las líneas") · @(r.StationId is null ? "Todas las estaciones" : stations.FirstOrDefault(s => s.Id == r.StationId)?.Name ?? r.StationId) · &gt; @r.ThresholdMinutes min</p></div><span class="rule-state @(r.Enabled ? "enabled" : "")">@(r.Enabled ? "Activa" : "Pausada")</span><button class="button secondary" @onclick="() => ToggleRule(r)">@(r.Enabled ? "Pausar" : "Activar")</button><button class="delete-rule" title="Eliminar regla" @onclick="() => DeleteRule(r.Id)">×</button></div> }<div class="new-rule"><h3>Nueva regla</h3><div class="rule-form"><label>Nombre<input @bind="ruleName" placeholder="Ej. Retraso crítico en C1" maxlength="120"/></label><label>Línea<select @bind="ruleLine"><option value="">Todas</option>@foreach (var l in snapshot.Trains.Select(t => t.Line).Distinct().Order()) { <option>@l</option> }</select></label><label>Estación<select @bind="ruleStation"><option value="">Todas</option>@foreach (var s in stations.OrderBy(s=>s.Name)) { <option value="@s.Id">@s.Name</option> }</select></label><label>Umbral (min)<input type="number" @bind="threshold" min="1" max="180"/></label></div><button class="button primary" @onclick="AddRule">+ Guardar regla</button></div></section>
+    }
+    <footer><span>RailWatch / Centro de control ferroviario</span><span>Datos: Renfe Open Data · CC BY 4.0 <span class="status-dot"/></span></footer>
+    </main></div>
+</div>
+
+@code {
+    private FeedSnapshot snapshot = new("Waiting", "Renfe Open Data", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, []);
+    private TrainPosition[] known = [];
+    private string view = "network", line = "", category = "", station = "", trainQuery = "";
+    private string ruleName = "", ruleLine = "", ruleStation = "", modelStatus = "Sin entrenar";
+    private int threshold = 15;
+    private string? error;
+    private bool mapReady, disposed;
+    private List<StationDto> stations = [];
+    private List<AlertRule> rules = [];
+    private readonly List<AlertEvent> alerts = [];
+    private IReadOnlyList<LineStats> lineStats = [];
+    private IReadOnlyList<TrendPoint> hours = [], daily = [];
+    private IEnumerable<TrainPosition> Filtered => snapshot.Trains.Where(t => (line.Length == 0 || t.Line == line) && (category.Length == 0 || t.Category == category));
+    private double? Punctuality => known.Length == 0 ? null : 100d * known.Count(t => t.DelaySeconds <= 300)/known.Length;
+    private string ModeLabel => snapshot.Mode == "Live" ? "En directo" : snapshot.Mode == "Replay" ? "Reproducción" : "Conectando";
+    protected override async Task OnInitializedAsync()
+    {
+        Live.Updated += OnSnapshot; Live.AlertRaised += OnAlert; snapshot = Live.Snapshot;
+        known = snapshot.Trains.Where(t=>t.DelaySeconds.HasValue).ToArray();
+        await RefreshAsync();
+    }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) { await JS.InvokeVoidAsync("railMap.init"); mapReady = true; await UpdateMap(); }
+    }
+    private void OnSnapshot(FeedSnapshot s) { if (!disposed) _ = InvokeAsync(async () => { snapshot = s; known = s.Trains.Where(t=>t.DelaySeconds.HasValue).ToArray(); await RefreshAsync(); await UpdateMap(); StateHasChanged(); }); }
+    private void OnAlert(AlertEvent a) { if (!disposed) _ = InvokeAsync(() => { if (alerts.All(x=>x.Key!=a.Key)) alerts.Insert(0,a); if (alerts.Count>100) alerts.RemoveAt(100); StateHasChanged(); }); }
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            using var scope = Scopes.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<RailDb>();
+            stations = await db.Stations.OrderBy(x=>x.Name).Select(x=>new StationDto(x.Id,x.Name,x.Latitude,x.Longitude)).ToListAsync();
+            rules = await db.AlertRules.OrderBy(x=>x.Name).ToListAsync();
+            alerts.Clear();
+            foreach (var rule in rules.Where(r=>r.Enabled))
+            foreach (var train in snapshot.Trains.Where(t=>DelayCalculator.IsLate(t.DelaySeconds,rule.ThresholdMinutes) && (rule.Line is null || rule.Line==t.Line) && (rule.StationId is null || rule.StationId==t.NextStopId)).OrderByDescending(t=>t.DelaySeconds))
+                alerts.Add(new(rule.Id+":"+train.Id,train.Id,train.Line,$"{train.Label}: {train.DelaySeconds/60} min en {train.NextStop}",snapshot.PublishedAt));
+            var analytics = scope.ServiceProvider.GetRequiredService<Analytics>(); var end = snapshot.ObservedAt.AddHours(1); var start = snapshot.ObservedAt.AddDays(-7);
+            lineStats = await analytics.LinesAsync(snapshot.Mode,start,end,default); hours = await analytics.TrendAsync(snapshot.Mode,start,end,true,default); daily = await analytics.TrendAsync(snapshot.Mode,start,end,false,default);
+            modelStatus = scope.ServiceProvider.GetRequiredService<DelayPredictor>().Status;
+        }
+        catch (Exception e) { error = "No se ha podido actualizar el panel: " + e.Message; }
+    }
+    private async Task UpdateMap() { if (mapReady && !disposed) await JS.InvokeVoidAsync("railMap.update",Filtered.ToArray(),snapshot.Mode); }
+    private async Task FocusTrain(string id) { view="network"; line=""; category=""; await UpdateMap(); await JS.InvokeVoidAsync("railMap.focus",id); }
+    private static DateTimeOffset Madrid(DateTimeOffset value) => TimeZoneInfo.ConvertTime(value, TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid"));
+    private static string DelayClass(int? d) => d is null ? "unknown" : d > 900 ? "late" : d > 300 ? "medium" : "ontime";
+    private static string DelayLabel(int? d) => d is null ? "Sin dato" : d <= 0 ? "En hora" : $"+{d.Value/60d:0.#} min";
+    private async Task AddRule()
+    {
+        if (string.IsNullOrWhiteSpace(ruleName) || threshold is <1 or >180) { error="Indica un nombre y un umbral entre 1 y 180 minutos.";return; }
+        using var scope=Scopes.CreateScope(); var db=scope.ServiceProvider.GetRequiredService<RailDb>(); db.AlertRules.Add(new(){Name=ruleName.Trim(),Line=ruleLine.Length==0?null:ruleLine,StationId=ruleStation.Length==0?null:ruleStation,ThresholdMinutes=threshold}); await db.SaveChangesAsync(); ruleName=""; await RefreshAsync();
+    }
+    private async Task ToggleRule(AlertRule rule) { using var scope=Scopes.CreateScope();var db=scope.ServiceProvider.GetRequiredService<RailDb>();var row=await db.AlertRules.FindAsync(rule.Id);if(row is not null){row.Enabled=!row.Enabled;await db.SaveChangesAsync();}await RefreshAsync(); }
+    private async Task DeleteRule(Guid id) { using var scope=Scopes.CreateScope();var db=scope.ServiceProvider.GetRequiredService<RailDb>();await db.AlertRules.Where(x=>x.Id==id).ExecuteDeleteAsync();await RefreshAsync(); }
+    private async Task TrainModel() { using var scope=Scopes.CreateScope();await scope.ServiceProvider.GetRequiredService<DelayPredictor>().TrainAsync(scope.ServiceProvider.GetRequiredService<RailDb>(),snapshot.Mode,default);await RefreshAsync(); }
+    public void Dispose() { disposed=true;Live.Updated-=OnSnapshot;Live.AlertRaised-=OnAlert; }
+}

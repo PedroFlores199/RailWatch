@@ -1,0 +1,9 @@
+{
+  "rows": 100000,
+  "repetitions": 30,
+  "efMedianMs": 15.5822,
+  "dapperMedianMs": 14.8776,
+  "resultsVerified": true,
+  "at": "2026-11-15T16:29:10.594538+00:00",
+  "notes": "Datos sint\u00E9ticos en base aislada. Misma agregaci\u00F3n GROUP BY; una ronda de calentamiento excluida. No mide las consultas con percentiles del panel."
+}

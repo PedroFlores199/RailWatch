@@ -1,0 +1,84 @@
+name: Build, tests & Docker
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RUN_CONTAINER_TESTS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '10.0.x' }
+      - run: dotnet restore
+      - run: dotnet build --no-restore --configuration Release
+      - run: dotnet test --no-build --configuration Release --logger 'trx;LogFileName=tests.trx' --results-directory artifacts/tests
+      - run: docker build --target api -t railwatch-api:ci . && docker build --target worker -t railwatch-worker:ci .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: linux-tests, path: artifacts/tests }
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '10.0.x' }
+      - run: dotnet build --configuration Release
+      - run: dotnet test --no-build --configuration Release --logger 'trx;LogFileName=windows.trx' --results-directory artifacts/tests
+      - name: Start API and test the WPF window
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          $apiProcess = Start-Process dotnet -ArgumentList 'run --no-build -c Release --project src/RailWatch.Api --urls http://127.0.0.1:5090' -PassThru -RedirectStandardOutput artifacts/api.log -RedirectStandardError artifacts/api-error.log
+          try {
+            $ready = $false
+            for ($attempt = 0; $attempt -lt 60; $attempt++) {
+              try { Invoke-RestMethod http://127.0.0.1:5090/health/ready | Out-Null; $ready = $true; break } catch { Start-Sleep -Seconds 1 }
+            }
+            if (-not $ready) { throw 'The API did not become ready.' }
+            $env:RAILWATCH_SCREENSHOT = "$pwd/artifacts/wpf-smoke.png"
+            dotnet run --no-build -c Release --project src/RailWatch.Desktop.Wpf -- --smoke-test
+            if ($LASTEXITCODE -ne 0) { throw 'WPF smoke test failed.' }
+            if (-not (Test-Path artifacts/wpf-smoke.png)) { throw 'WPF screenshot missing.' }
+          } finally { Stop-Process -Id $apiProcess.Id -ErrorAction SilentlyContinue }
+      - name: Build Windows downloads
+        shell: pwsh
+        run: |
+          foreach ($runtime in @('win-x64','win-arm64')) {
+            dotnet publish src/RailWatch.Desktop.Wpf -c Release -r $runtime --self-contained true -o artifacts/desktop-$runtime
+            if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }
+            Compress-Archive -Path artifacts/desktop-$runtime/* -DestinationPath artifacts/RailWatch-$runtime.zip
+            ./scripts/package-msix.ps1 -Runtime $runtime
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-desktop
+          path: |
+            artifacts/*.zip
+            artifacts/*.msix
+            artifacts/*.png
+            artifacts/*.log
+            artifacts/tests
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
+    permissions: { contents: write }
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: windows-desktop, path: release }
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release/*.zip
+            release/*.msix
+            release/wpf-smoke.png

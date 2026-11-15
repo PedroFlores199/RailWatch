@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <title>RailWatch · Centro de control ferroviario</title>
+    <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
+    <link rel="stylesheet" href="railwatch.css" />
+    <HeadOutlet @rendermode="InteractiveServer" />
+</head>
+<body>
+    <Routes @rendermode="InteractiveServer" />
+    <script src="vendor/leaflet/leaflet.js"></script>
+    <script src="map.js"></script>
+    <script src="_framework/blazor.web.js"></script>
+    <div id="blazor-error-ui">La conexión se ha interrumpido. <a href="/">Volver a conectar</a></div>
+</body>
+</html>
