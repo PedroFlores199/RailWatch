@@ -8,4 +8,6 @@ El feed no garantiza cobertura de AVE/Media Distancia. No se estiman trayectoria
 
 Las reglas pueden configurarse libremente en esta demostración local. La API pública necesitaría autenticación, límites de acceso, migraciones de esquema y secretos externos. No se afirma una auditoría independiente ni la ausencia absoluta de errores.
 
-Despliegue completo comprobado con Docker Compose. El recorrido HTTP comprueba permisos, resultados y archivos exportados. Se comprobaron filtros, estadísticas, creación/eliminación de reglas, Excel, recursos interactivos de Blazor y endpoint de métricas.
+Despliegue completo comprobado con Docker Compose. El recorrido HTTP comprueba resultados y archivos exportados. Se comprobaron filtros, estadísticas, creación/eliminación de reglas, Excel, recursos interactivos de Blazor y endpoint de métricas.
+
+El modo Live se ha probado contra Renfe: descarga completa del horario y recepción de más de 300 posiciones actuales. Prometheus ha recogido contadores reales y Grafana ha cargado el panel provisionado. Estos resultados dependen de la disponibilidad del proveedor.
