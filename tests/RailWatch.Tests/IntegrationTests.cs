@@ -23,7 +23,7 @@ public sealed class RailFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         Directory.CreateDirectory(directory);
-        builder.ConfigureAppConfiguration((_, c) => c.AddInMemoryCollection(new Dictionary<string, string?> { { "Storage:Mode", "Local" }, { "ConnectionStrings:Sqlite", "Data Source=" + Path.Combine(directory, "test.db") }, { "Feed:SampleSchedule", Path.Combine(Samples.DirectoryPath, "schedule.zip") }, { "Feed:RecordingsDirectory", Path.Combine(Samples.DirectoryPath, "recordings") }, { "Feed:EmbeddedWorker", "true" } }));
+        builder.ConfigureAppConfiguration((_, c) => c.AddInMemoryCollection(new Dictionary<string, string?> { { "Storage:Mode", "Local" }, { "ConnectionStrings:Sqlite", "Data Source=" + Path.Combine(directory, "test.db") + ";Pooling=False" }, { "Feed:SampleSchedule", Path.Combine(Samples.DirectoryPath, "schedule.zip") }, { "Feed:RecordingsDirectory", Path.Combine(Samples.DirectoryPath, "recordings") }, { "Feed:EmbeddedWorker", "true" } }));
     }
     protected override void Dispose(bool disposing) { base.Dispose(disposing); if (disposing && Directory.Exists(directory)) Directory.Delete(directory, true); }
 }

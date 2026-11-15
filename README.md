@@ -74,7 +74,7 @@ flowchart LR
 
 ## Pruebas y mediciones
 
-20 pruebas automáticas: retrasos explícitos y desconocidos, límites de alertas, horas GTFS superiores a 24, horario de Madrid, ViewModel, alertas repetidas, lectura de capturas Protobuf, API, Excel y agregaciones contra PostgreSQL real con Testcontainers.
+22 pruebas automáticas: retrasos explícitos y desconocidos, límites de alertas, horas GTFS superiores a 24, horario de Madrid, ViewModel, alertas repetidas, lectura de capturas Protobuf, API, Excel y agregaciones contra PostgreSQL real con Testcontainers.
 
 ```bash
 dotnet test
